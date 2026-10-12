@@ -1,0 +1,1186 @@
+import { AboutSlint, Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider, SpinBox } from "std-widgets.slint";
+
+export struct Shot {
+    id: string,
+    title: string,
+    thumbnail: image,
+    x: length,
+    y: length,
+    card-width: length,
+    card-height: length,
+    angle: angle,
+    video: bool,
+}
+
+component IconButton inherits FocusScope {
+    in property <image> icon;
+    in property <string> hint;
+    out property <bool> has-hover: hit.has-hover;
+    callback clicked();
+    preferred-width: 30px;
+    preferred-height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    accessible-role: button;
+    accessible-label: root.hint;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    key-pressed(event) => {
+        if root.enabled && (event.text == Key.Space || event.text == Key.Return) {
+            root.clicked();
+            return accept;
+        }
+        return reject;
+    }
+    Rectangle {
+        border-radius: 5px;
+        background: hit.pressed ? Palette.alternate-background : hit.has-hover ? Palette.control-background : transparent;
+        border-width: root.has-focus ? 1.5px : 0px;
+        border-color: Palette.accent-background;
+        Image {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 16px; height: 16px;
+            source: root.icon;
+            colorize: Palette.control-foreground;
+            opacity: root.enabled ? 1 : 0.35;
+            accessible-role: none;
+        }
+        hit := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => { root.focus(); root.clicked(); }
+        }
+    }
+    Tooltip { text: @markdown("{root.hint}"); }
+}
+
+// The clip and rope use the same dimensions whatever the photograph's aspect ratio.
+component HangingShot inherits Rectangle {
+    in property <Shot> shot;
+    in property <bool> english;
+    in property <bool> dark;
+    in property <bool> reduced-motion;
+    in property <int> landing-serial;
+    in property <bool> enabled: true;
+    callback action(string, string);
+    callback mouse-event(string, string, float, float);
+    private property <int> landing-stage: 4;
+    private property <angle> landing-angle: 0deg;
+    private property <bool> hovering: photo-touch.has-hover || actions-touch.has-hover || preview-action.has-hover || save-action.has-hover || remove-action.has-hover;
+    init => {
+        if root.landing-serial > 0 && !root.reduced-motion {
+            root.landing-stage = 0;
+            root.landing-angle = -4.5deg;
+        }
+    }
+    changed landing-serial => {
+        root.landing-stage = root.landing-serial > 0 && !root.reduced-motion ? 0 : 4;
+        root.landing-angle = root.landing-stage == 0 ? -4.5deg : 0deg;
+    }
+
+    width: root.shot.card-width;
+    height: root.shot.card-height + 60px;
+    transform-origin: { x: self.width / 2, y: 9px };
+    transform-rotation: root.shot.angle + root.landing-angle + (root.hovering && !root.reduced-motion ? -1.2deg : 0deg);
+    animate transform-rotation { duration: root.reduced-motion ? 0ms : 190ms; easing: ease-out; }
+
+    Timer {
+        interval: 170ms;
+        running: root.landing-stage < 4;
+        triggered => {
+            root.landing-stage += 1;
+            if root.landing-stage == 1 { root.landing-angle = 2.5deg; }
+            if root.landing-stage == 2 { root.landing-angle = -1.2deg; }
+            if root.landing-stage == 3 { root.landing-angle = 0.4deg; }
+            if root.landing-stage == 4 { root.landing-angle = 0deg; }
+        }
+    }
+
+    photo := Rectangle {
+        y: 16px;
+        width: root.shot.card-width;
+        height: root.shot.card-height;
+        background: root.dark ? #25292de8 : #f5f7f9ed;
+        border-radius: 14px;
+        drop-shadow-color: #00000040;
+        drop-shadow-offset-y: root.hovering ? 8px : 5px;
+        drop-shadow-blur: root.hovering ? 14px : 10px;
+        animate drop-shadow-offset-y, drop-shadow-blur { duration: 150ms; }
+
+        Rectangle {
+            x: 4px; y: 4px;
+            width: parent.width - 8px;
+            height: parent.height - 8px;
+            border-radius: 10px;
+            clip: true;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.shot.thumbnail;
+                image-fit: contain;
+                image-rendering: smooth;
+                accessible-label: root.shot.title;
+            }
+        }
+
+        if root.shot.video: Rectangle {
+            x: parent.width - self.width - 8px;
+            y: parent.height - self.height - 8px;
+            width: root.english ? 46px : 36px;
+            height: 22px;
+            background: #161b22dc;
+            border-radius: 5px;
+            Text {
+                text: root.english ? "Video" : "视频";
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        photo-touch := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            double-clicked => { root.action("preview", root.shot.id); }
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.cancel {
+                    root.mouse-event(root.shot.id, "cancel", self.mouse-x / 1px, self.mouse-y / 1px);
+                } else if event.button == PointerEventButton.left {
+                    root.mouse-event(root.shot.id, event.kind == PointerEventKind.down ? "down" : "up", self.mouse-x / 1px, self.mouse-y / 1px);
+                } else if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                    root.action("copy", root.shot.id);
+                }
+            }
+            moved => { root.mouse-event(root.shot.id, "move", self.mouse-x / 1px, self.mouse-y / 1px); }
+        }
+    }
+
+    // A narrow brushed aluminium peg overlaps the image rather than becoming a card header.
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 0px;
+        width: 9px;
+        height: 26px;
+        border-radius: 3.5px;
+        background: @linear-gradient(90deg, #b3b7ba 0%, #eff0f1 35%, #ced1d3 65%, #92999e 100%);
+        drop-shadow-color: #00000050;
+        drop-shadow-offset-y: 1.5px;
+        drop-shadow-blur: 2px;
+        Rectangle { x: 2px; y: 8.5px; width: 5px; height: 1.5px; border-radius: 1px; background: #3e484b8a; }
+    }
+
+    actions := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: photo.y + photo.height + 5px;
+        width: 108px;
+        height: 34px;
+        background: root.dark ? #25292df8 : #f9fafbf8;
+        border-radius: 8px;
+        drop-shadow-color: #00000030;
+        drop-shadow-offset-y: 3px;
+        drop-shadow-blur: 8px;
+        opacity: root.hovering ? 1 : 0;
+        animate opacity { duration: 140ms; }
+        actions-touch := TouchArea { y: -8px; height: parent.height + 8px; enabled: root.enabled; }
+        HorizontalLayout {
+            padding: 2px;
+            spacing: 4px;
+            preview-action := IconButton { icon: @image-url("icons/preview.svg"); hint: root.english ? "Edit image" : "编辑图片"; enabled: root.enabled && root.hovering; clicked => { root.action("preview", root.shot.id); } }
+            save-action := IconButton { icon: @image-url("icons/save.svg"); hint: root.english ? "Save a copy" : "另存副本"; enabled: root.enabled && root.hovering; clicked => { root.action("save", root.shot.id); } }
+            remove-action := IconButton { icon: @image-url("icons/remove.svg"); hint: root.english ? "Remove from line" : "从晾衣绳移除"; enabled: root.enabled && root.hovering; clicked => { root.action("remove", root.shot.id); } }
+        }
+    }
+    Tooltip { text: @markdown("{root.shot.title}\n{root.english ? \"Double-click to edit · Right-click to copy · Drag to share\" : \"双击编辑 · 右键复制 · 拖动分享\"}"); }
+}
+
+export component OverlayWindow inherits Window {
+    in-out property <[Shot]> shots;
+    in-out property <bool> revealed: true;
+    in-out property <bool> english: false;
+    in-out property <bool> dark: false;
+    in-out property <bool> reduced-motion: false;
+    in-out property <string> arriving-id;
+    in-out property <string> landed-id;
+    in-out property <int> landing-serial;
+    in-out property <string> status;
+    in-out property <string> page-text;
+    callback capture();
+    callback import-files();
+    callback settings();
+    callback hide-line();
+    callback clear-line();
+    callback previous-page();
+    callback next-page();
+    callback item-action(string, string);
+    callback drag-start(string);
+    callback mouse-event(string, string, float, float);
+    init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    title: root.english ? "Snapline" : "晾图";
+    preferred-width: 1280px;
+    preferred-height: 300px;
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+
+    Rectangle {
+        width: root.width;
+        height: root.height;
+        y: root.revealed ? 0px : -root.height;
+        animate y { duration: root.reduced-motion ? 0ms : 240ms; easing: ease-out; }
+
+        Path {
+            x: -20px; y: 10px;
+            width: root.width + 40px; height: 34px;
+            viewbox-width: (root.width + 40px) / 1px;
+            viewbox-height: 34;
+            fit: fill;
+            stroke: #0000003a; stroke-width: 2px;
+            MoveTo { x: 0; y: 1.3; }
+            QuadraticTo { x: (root.width + 40px) / 1px; y: 1.3; control-x: (root.width + 40px) / 2px; control-y: 61.3; }
+        }
+        Path {
+            x: -20px; y: 10px;
+            width: root.width + 40px; height: 34px;
+            viewbox-width: (root.width + 40px) / 1px;
+            viewbox-height: 34;
+            fit: fill;
+            stroke: #90999fff; stroke-width: 1.2px;
+            MoveTo { x: 0; y: 0; }
+            QuadraticTo { x: (root.width + 40px) / 1px; y: 0; control-x: (root.width + 40px) / 2px; control-y: 60; }
+        }
+        Path {
+            x: -20px; y: 9.65px;
+            width: root.width + 40px; height: 34px;
+            viewbox-width: (root.width + 40px) / 1px;
+            viewbox-height: 34;
+            fit: fill;
+            stroke: #ffffff70; stroke-width: 0.4px;
+            MoveTo { x: 0; y: 0; }
+            QuadraticTo { x: (root.width + 40px) / 1px; y: 0; control-x: (root.width + 40px) / 2px; control-y: 60; }
+        }
+
+        if root.shots.length == 0: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 60px;
+            width: root.english ? 414px : 350px;
+            height: 80px;
+            background: root.dark ? #25292df5 : #f9fafbf5;
+            border-radius: 14px;
+            drop-shadow-color: #00000028;
+            drop-shadow-offset-y: 5px;
+            drop-shadow-blur: 14px;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 6px;
+                Text {
+                    text: root.english ? "A place for your screenshots" : "给截图一个随手可取的位置";
+                    font-size: 15px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    color: root.dark ? #f5f7f9 : #18242d;
+                }
+                Text {
+                    text: root.english ? "Press Win + Shift + S, or import an image" : "按 Win + Shift + S 截图，或导入一张图片";
+                    horizontal-alignment: center;
+                    color: root.dark ? #bbc5cc : #53606b;
+                }
+            }
+        }
+
+        for shot in root.shots: HangingShot {
+            x: shot.x; y: shot.y;
+            animate x, y { duration: root.reduced-motion ? 0ms : 230ms; easing: ease-out; }
+            shot: shot;
+            english: root.english;
+            dark: root.dark;
+            reduced-motion: root.reduced-motion;
+            landing-serial: shot.id == root.landed-id ? root.landing-serial : 0;
+            opacity: shot.id == root.arriving-id ? 0 : 1;
+            enabled: shot.id != root.arriving-id;
+            action(action, id) => { root.item-action(action, id); }
+            mouse-event(id, event, x, y) => { root.mouse-event(id, event, x, y); }
+        }
+
+        Rectangle {
+            x: root.width - 440px; y: 6px;
+            width: 430px; height: 38px;
+            background: root.dark ? #25292df5 : #f9fafbf5;
+            border-radius: 9px;
+            drop-shadow-color: #00000028;
+            drop-shadow-offset-y: 3px;
+            drop-shadow-blur: 10px;
+            HorizontalLayout {
+                padding: 4px;
+                spacing: 5px;
+                Text { text: root.english ? "Snapline" : "晾图"; color: root.dark ? #f5f7f9 : #18242d; font-weight: 600; width: 62px; vertical-alignment: center; horizontal-alignment: center; }
+                IconButton { icon: @image-url("icons/previous.svg"); hint: root.english ? "Previous images" : "上一页图片"; enabled: !root.page-text.is-empty; clicked => { root.previous-page(); } }
+                Text { text: root.page-text.is-empty ? "—" : root.page-text; color: root.dark ? #bbc5cc : #53606b; width: 34px; vertical-alignment: center; horizontal-alignment: center; }
+                IconButton { icon: @image-url("icons/next.svg"); hint: root.english ? "Next images" : "下一页图片"; enabled: !root.page-text.is-empty; clicked => { root.next-page(); } }
+                Button { text: root.english ? "Capture" : "截图"; clicked => { root.capture(); } }
+                Button { text: root.english ? "Import" : "导入"; clicked => { root.import-files(); } }
+                IconButton { icon: @image-url("icons/settings.svg"); hint: root.english ? "Settings" : "设置"; clicked => { root.settings(); } }
+                IconButton { icon: @image-url("icons/hide.svg"); hint: root.english ? "Hide line" : "收起晾衣绳"; clicked => { root.hide-line(); } }
+            }
+        }
+
+        if !root.status.is-empty: Rectangle {
+            x: (root.width - self.width) / 2;
+            y: root.height - 36px;
+            width: min(640px, message.preferred-width + 32px);
+            height: 30px;
+            background: root.dark ? #25292df5 : #f9fafbf5;
+            border-radius: 8px;
+            message := Text {
+                x: 16px; width: parent.width - 32px; height: parent.height;
+                text: root.status;
+                color: root.dark ? #f5f7f9 : #18242d;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+// Each model row owns its timer, so adding another falling photo leaves existing falls alone.
+component DroppingShot inherits Rectangle {
+    in property <Shot> shot;
+    in property <bool> dark;
+    in property <bool> reduced-motion;
+    in property <length> fall-height;
+    private property <bool> falling: false;
+    private property <float> progress: root.falling ? 1 : 0;
+    private property <float> direction: root.shot.angle < 0deg ? -1 : 1;
+
+    x: root.shot.x + (root.reduced-motion ? 0px : root.direction * 32px * root.progress);
+    y: root.shot.y + 16px + (root.reduced-motion ? 0px : (root.fall-height + root.shot.card-height - root.shot.y - 16px) * root.progress * root.progress);
+    width: root.shot.card-width;
+    height: root.shot.card-height;
+    transform-origin: { x: self.width / 2, y: -7px };
+    transform-rotation: root.shot.angle + (root.reduced-motion ? 0deg : root.direction * 16deg * root.progress);
+    opacity: root.reduced-motion ? 1 - root.progress : min(1, max(0, (1 - root.progress) / 0.26));
+    background: root.dark ? #25292de8 : #f5f7f9ed;
+    border-radius: 14px;
+    drop-shadow-color: #00000040;
+    drop-shadow-offset-y: 5px;
+    drop-shadow-blur: 10px;
+    animate progress { duration: root.reduced-motion ? 100ms : 520ms; easing: linear; }
+
+    Timer {
+        interval: 16ms;
+        running: !root.falling;
+        triggered => { root.falling = true; }
+    }
+
+    Rectangle {
+        x: 4px; y: 4px;
+        width: max(0px, parent.width - 8px);
+        height: max(0px, parent.height - 8px);
+        border-radius: 10px;
+        clip: true;
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.shot.thumbnail;
+            image-fit: contain;
+            image-rendering: smooth;
+            accessible-role: none;
+        }
+    }
+    if root.shot.video: Rectangle {
+        x: parent.width - self.width - 8px;
+        y: parent.height - self.height - 8px;
+        width: 22px;
+        height: 22px;
+        background: #161b22dc;
+        border-radius: 5px;
+        Path {
+            x: 7px; y: 5px;
+            width: 9px; height: 12px;
+            viewbox-width: 9;
+            viewbox-height: 12;
+            fill: #ffffff;
+            MoveTo { x: 0; y: 0; }
+            LineTo { x: 9; y: 6; }
+            LineTo { x: 0; y: 12; }
+            Close { }
+        }
+    }
+}
+
+// The native host makes this desktop-sized helper click-through and nonactivating.
+export component DropWindow inherits Window {
+    in-out property <[Shot]> shots;
+    in-out property <bool> dark: false;
+    in-out property <bool> reduced-motion: false;
+
+    title: "Snapline Drop";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+
+    for shot in root.shots: DroppingShot {
+        shot: shot;
+        dark: root.dark;
+        reduced-motion: root.reduced-motion;
+        fall-height: root.height;
+    }
+}
+
+// A separate click-through native window carries the new photograph to its peg.
+// Keeping its image above the desktop leaves the clothesline window at 300px tall.
+export component CaptureWindow inherits Window {
+    in-out property <image> snapshot;
+    in-out property <length> start-x;
+    in-out property <length> start-y;
+    in-out property <length> start-width;
+    in-out property <length> start-height;
+    in-out property <length> target-x;
+    in-out property <length> target-y;
+    in-out property <length> target-width;
+    in-out property <length> target-height;
+    in-out property <angle> target-angle;
+    in-out property <bool> dark;
+    in-out property <bool> land: false;
+    in-out property <bool> flash: true;
+    in-out property <bool> reduced-motion: false;
+
+    title: "Snapline Capture";
+    in-out property <bool> preparing: false;
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+
+    Rectangle {
+        x: root.land || root.reduced-motion ? root.target-x : root.start-x;
+        y: root.land || root.reduced-motion ? root.target-y : root.start-y;
+        width: root.land || root.reduced-motion ? root.target-width : root.start-width;
+        height: root.land || root.reduced-motion ? root.target-height : root.start-height;
+        transform-origin: { x: self.width / 2, y: -7px };
+        transform-rotation: root.land ? root.target-angle : 0deg;
+        background: root.dark ? #25292de8 : #f5f7f9ed;
+        border-radius: 14px;
+        drop-shadow-color: #00000040;
+        drop-shadow-offset-y: root.land ? 5px : 12px;
+        drop-shadow-blur: root.land ? 10px : 22px;
+        animate x, y, width, height, transform-rotation, drop-shadow-offset-y, drop-shadow-blur {
+            duration: root.reduced-motion || root.preparing ? 0ms : 500ms;
+            easing: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        Rectangle {
+            x: 4px; y: 4px;
+            width: max(0px, parent.width - 8px);
+            height: max(0px, parent.height - 8px);
+            border-radius: 10px;
+            clip: true;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.snapshot;
+                image-fit: contain;
+                image-rendering: smooth;
+                accessible-role: none;
+            }
+            // Only the photograph flashes; the rest of the desktop stays visible.
+            Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: #ffffff;
+                opacity: root.flash ? 0.72 : 0;
+                animate opacity { duration: root.preparing ? 0ms : 120ms; easing: ease-out; }
+            }
+        }
+    }
+}
+
+component SettingsNavItem inherits FocusScope {
+    in property <bool> dark;
+    in property <bool> selected;
+    in property <string> text;
+    in property <image> icon;
+    callback clicked();
+    min-height: 46px;
+    preferred-height: 46px;
+    vertical-stretch: 0;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.clicked(); }
+    key-pressed(event) => {
+        if event.text == Key.Space || event.text == Key.Return {
+            root.clicked();
+            return accept;
+        }
+        return reject;
+    }
+    Rectangle {
+        border-radius: 9px;
+        background: root.selected ? (root.dark ? #354b3f : #dcecdf) : hit.has-hover ? (root.dark ? #2e3a32 : #e5eee4) : transparent;
+        border-width: root.has-focus ? 1.5px : 0px;
+        border-color: root.dark ? #a3c4ab : #3f7253;
+        HorizontalLayout {
+            padding-left: 11px;
+            padding-right: 9px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                Image {
+                    width: 18px; height: 18px;
+                    source: root.icon;
+                    colorize: root.dark ? #b8d4bf : #456b50;
+                    accessible-role: none;
+                }
+            }
+            Text {
+                text: root.text;
+                color: root.dark ? #e0ebe2 : #294a34;
+                font-size: 13px;
+                font-weight: root.selected ? 600 : 400;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        hit := TouchArea { mouse-cursor: pointer; clicked => { root.focus(); root.clicked(); } }
+    }
+}
+
+component SettingsAction inherits FocusScope {
+    in property <bool> dark;
+    in property <bool> primary;
+    in property <string> text;
+    in property <image> icon;
+    callback clicked();
+    preferred-height: 36px;
+    min-height: 36px;
+    max-height: 36px;
+    horizontal-stretch: 0;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    key-pressed(event) => {
+        if root.enabled && (event.text == Key.Space || event.text == Key.Return) {
+            root.clicked();
+            return accept;
+        }
+        return reject;
+    }
+    Rectangle {
+        border-radius: 8px;
+        opacity: root.enabled ? 1 : 0.45;
+        background: root.primary
+            ? (hit.pressed ? #2c5e40 : hit.has-hover ? #386e4c : #427b56)
+            : (hit.pressed ? (root.dark ? #3e5143 : #dce8dc) : hit.has-hover ? (root.dark ? #34463a : #e5eee3) : (root.dark ? #2b382f : #f8faf4));
+        border-width: root.has-focus ? 2px : root.primary ? 0px : 1px;
+        border-color: root.has-focus ? (root.dark ? #bcdec1 : #285337) : (root.dark ? #526156 : #d2dfd0);
+        HorizontalLayout {
+            padding-left: 14px; padding-right: 14px;
+            spacing: 7px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                Image {
+                    width: 16px; height: 16px;
+                    source: root.icon;
+                    colorize: root.primary ? #ffffff : (root.dark ? #dce9df : #31523a);
+                    accessible-role: none;
+                }
+            }
+            Text {
+                text: root.text;
+                color: root.primary ? #ffffff : (root.dark ? #dce9df : #31523a);
+                font-size: 13px;
+                font-weight: root.primary ? 600 : 400;
+                vertical-alignment: center;
+            }
+        }
+        hit := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.focus(); root.clicked(); } }
+    }
+}
+
+component SettingsToggle inherits FocusScope {
+    in property <bool> dark;
+    in property <string> label;
+    in-out property <bool> checked;
+    min-width: 42px; max-width: 42px;
+    min-height: 26px; max-height: 26px;
+    horizontal-stretch: 0;
+    accessible-role: checkbox;
+    accessible-label: root.label;
+    accessible-checked <=> root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.checked = !root.checked; } }
+    key-pressed(event) => {
+        if root.enabled && event.text == Key.Space {
+            root.checked = !root.checked;
+            return accept;
+        }
+        return reject;
+    }
+    Rectangle {
+        x: 0px; y: 1px;
+        width: 42px; height: 24px;
+        border-radius: 12px;
+        background: root.checked ? (root.dark ? #86b393 : #427b56) : (root.dark ? #65756a : #899a8b);
+        opacity: root.enabled ? 1 : 0.4;
+        border-width: root.has-focus ? 2px : 0px;
+        border-color: root.dark ? #d4e8d8 : #254e32;
+        Rectangle {
+            x: root.checked ? 21px : 3px;
+            y: 3px;
+            width: 18px; height: 18px;
+            border-radius: 9px;
+            background: #ffffff;
+        }
+        hit := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.focus(); root.checked = !root.checked; } }
+    }
+}
+
+component SettingRow inherits Rectangle {
+    in property <bool> dark;
+    in property <string> label;
+    in property <string> detail;
+    in property <image> icon;
+    in property <bool> divider: true;
+    preferred-height: root.detail.is-empty ? 68px : 92px;
+    min-height: root.detail.is-empty ? 68px : 92px;
+    vertical-stretch: 0;
+    background: transparent;
+    HorizontalLayout {
+        padding-top: 15px; padding-bottom: 15px;
+        spacing: 13px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Image {
+                width: 19px; height: 19px;
+                source: root.icon;
+                colorize: root.dark ? #a4c3ae : #52745b;
+                accessible-role: none;
+            }
+        }
+        VerticalLayout {
+            spacing: 5px;
+            alignment: center;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            Text {
+                text: root.label;
+                color: root.dark ? #e5eee7 : #263e2d;
+                font-size: 14px;
+                font-weight: 500;
+                wrap: word-wrap;
+                vertical-stretch: 0;
+            }
+            if !root.detail.is-empty: Text {
+                text: root.detail;
+                color: root.dark ? #b9c9be : #5c7061;
+                font-size: 12px;
+                wrap: word-wrap;
+                vertical-stretch: 0;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            @children
+        }
+    }
+    if root.divider: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: root.dark ? #38463c : #e2e9dd;
+    }
+}
+
+export component SettingsWindow inherits Window {
+    in-out property <bool> english;
+    in-out property <bool> dark;
+    in-out property <bool> system-dark: false;
+    in-out property <int> section-index: 0;
+    in-out property <bool> clipboard-enabled: true;
+    in-out property <bool> capture-sound: true;
+    in-out property <bool> watch-enabled: true;
+    in-out property <string> watch-folder;
+    in-out property <int> size-index: 1;
+    in-out property <int> max-items: 30;
+    in-out property <bool> show-over-fullscreen: false;
+    in-out property <bool> autostart: false;
+    in-out property <string> hotkey: "Ctrl+Alt+T";
+    in-out property <int> language-index: 0;
+    in-out property <int> theme-index: 0;
+    in-out property <string> status;
+    callback save();
+    callback choose-folder();
+    callback done();
+    callback about();
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    private property <color> ink: root.dark ? #e5eee7 : #263e2d;
+    private property <color> muted-ink: root.dark ? #b9c9be : #5c7061;
+    private property <color> line-color: root.dark ? #38463c : #e2e9dd;
+
+    title: root.english ? "Snapline · Settings" : "晾图 · 设置";
+    icon: @image-url("../assets/snapline.png");
+    preferred-width: 760px;
+    preferred-height: 660px;
+    min-width: 660px;
+    min-height: 560px;
+    background: root.dark ? #222e27 : #fbfcf7;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle {
+            height: 104px;
+            vertical-stretch: 0;
+            HorizontalLayout {
+                padding-left: 27px;
+                padding-right: 28px;
+                spacing: 16px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Rectangle {
+                        width: 44px; height: 44px;
+                        border-radius: 13px;
+                        background: root.dark ? #34483b : #e7f0e2;
+                        Image {
+                            x: 11px; y: 11px;
+                            width: 22px; height: 22px;
+                            source: @image-url("icons/settings.svg");
+                            colorize: root.dark ? #b8d4bf : #456b50;
+                            accessible-role: none;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 6px;
+                    alignment: center;
+                    Text { text: root.english ? "Make yourself at home" : "按你的习惯晾图"; color: root.ink; font-size: 22px; font-weight: 600; vertical-stretch: 0; }
+                    Text { text: root.english ? "Keep screenshots close. Keep your desktop clear." : "截图留在手边，桌面保持清爽。"; color: root.muted-ink; font-size: 12px; vertical-stretch: 0; }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: root.line-color; }
+        }
+
+        HorizontalLayout {
+            spacing: 0px;
+            Rectangle {
+                width: 156px;
+                horizontal-stretch: 0;
+                background: root.dark ? #27372d : #f0f5eb;
+                VerticalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 20px;
+                    padding-bottom: 23px;
+                    spacing: 7px;
+                    SettingsNavItem { dark: root.dark; selected: root.section-index == 0; text: root.english ? "Sources" : "图片来源"; icon: @image-url("icons/clipboard.svg"); clicked => { root.section-index = 0; } }
+                    SettingsNavItem { dark: root.dark; selected: root.section-index == 1; text: root.english ? "Clothesline" : "晾衣绳"; icon: @image-url("icons/clothesline.svg"); clicked => { root.section-index = 1; } }
+                    SettingsNavItem { dark: root.dark; selected: root.section-index == 2; text: root.english ? "Appearance" : "外观"; icon: @image-url("icons/appearance.svg"); clicked => { root.section-index = 2; } }
+                    SettingsNavItem { dark: root.dark; selected: root.section-index == 3; text: root.english ? "Startup" : "启动与快捷键"; icon: @image-url("icons/startup.svg"); clicked => { root.section-index = 3; } }
+                    Rectangle { vertical-stretch: 1; }
+                    Text {
+                        text: root.english ? "A little room\nfor your screenshots." : "给截图留一点\n轻松的位置。";
+                        color: root.muted-ink;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        vertical-stretch: 0;
+                    }
+                }
+            }
+            Rectangle { width: 1px; horizontal-stretch: 0; background: root.line-color; }
+            ScrollView {
+                content-width: self.visible-width;
+                VerticalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 26px;
+                    padding-bottom: 24px;
+                    spacing: 0px;
+                    alignment: start;
+                    Text {
+                        text: root.section-index == 0 ? (root.english ? "Image sources" : "图片来源")
+                            : root.section-index == 1 ? (root.english ? "The clothesline" : "晾衣绳")
+                            : root.section-index == 2 ? (root.english ? "Appearance" : "外观")
+                            : (root.english ? "Startup & shortcuts" : "启动与快捷键");
+                        color: root.ink;
+                        font-size: 20px;
+                        font-weight: 600;
+                        vertical-stretch: 0;
+                    }
+                    Text {
+                        text: root.section-index == 0 ? (root.english ? "Choose how new images find their way onto the line." : "选择图片来到晾衣绳的方式。")
+                            : root.section-index == 1 ? (root.english ? "Give every screenshot a comfortable spot." : "为每一张截图安排合适的位置。")
+                            : root.section-index == 2 ? (root.english ? "A familiar language and a softer light." : "熟悉的语言，舒服的明暗。")
+                            : (root.english ? "Keep the line one shortcut away." : "想用的时候，一键就能找到。");
+                        color: root.muted-ink;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        vertical-stretch: 0;
+                    }
+                    Rectangle { height: 18px; vertical-stretch: 0; }
+
+                    if root.section-index == 0: VerticalLayout {
+                        spacing: 0px;
+                        alignment: start;
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Receive clipboard images" : "自动接收剪贴板图片";
+                            detail: root.english ? "Works with WeChat screenshots, Win + Shift + S and copied images." : "支持微信截图、Win + Shift + S 与复制的图片。";
+                            icon: @image-url("icons/clipboard.svg");
+                            SettingsToggle { dark: root.dark; label: root.english ? "Receive clipboard images" : "自动接收剪贴板图片"; checked <=> root.clipboard-enabled; }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Shutter sound" : "截图快门声";
+                            detail: root.english ? "A small click when a screenshot is captured." : "截图成功时，听到轻轻一声咔嚓。";
+                            icon: @image-url("icons/sound.svg");
+                            SettingsToggle { dark: root.dark; label: root.english ? "Shutter sound" : "截图快门声"; checked <=> root.capture-sound; }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Watch a screenshot folder" : "监听截图文件夹";
+                            detail: root.english ? "Hang new images saved in this folder." : "把指定文件夹里的新图片挂上来。";
+                            icon: @image-url("icons/folder.svg");
+                            divider: false;
+                            SettingsToggle { dark: root.dark; label: root.english ? "Watch a screenshot folder" : "监听截图文件夹"; checked <=> root.watch-enabled; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit { accessible-label: root.english ? "Screenshot folder" : "截图文件夹"; min-width: 0px; horizontal-stretch: 1; text <=> root.watch-folder; read-only: true; enabled: root.watch-enabled; placeholder-text: root.english ? "Choose a screenshot folder" : "选择截图保存位置"; }
+                            SettingsAction { dark: root.dark; text: root.english ? "Browse" : "选择"; icon: @image-url("icons/folder.svg"); enabled: root.watch-enabled; clicked => { root.choose-folder(); } }
+                        }
+                    }
+                    if root.section-index == 1: VerticalLayout {
+                        spacing: 0px;
+                        alignment: start;
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Thumbnail size" : "缩略图大小";
+                            detail: root.english ? "Set the size of images on the line." : "调整挂在绳上的图片尺寸。";
+                            icon: @image-url("icons/clothesline.svg");
+                            ComboBox { accessible-label: root.english ? "Thumbnail size" : "缩略图大小"; min-width: 145px; max-width: 145px; horizontal-stretch: 0; model: root.english ? ["Small", "Medium", "Large"] : ["小", "中", "大"]; current-index <=> root.size-index; }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Keep on the line" : "最多保留";
+                            detail: root.english ? "The oldest image falls away when the line is full." : "达到上限时，最早的图片会轻轻落下。";
+                            icon: @image-url("icons/clipboard.svg");
+                            HorizontalLayout {
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+                                spacing: 8px;
+                                SpinBox { accessible-label: root.english ? "Maximum images" : "最多保留图片数量"; min-width: 100px; max-width: 100px; horizontal-stretch: 0; value <=> root.max-items; minimum: 5; maximum: 100; }
+                                Text { text: root.english ? "images" : "张"; color: root.muted-ink; vertical-alignment: center; horizontal-stretch: 0; }
+                            }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Show above fullscreen apps" : "全屏时也显示";
+                            detail: root.english ? "Keep the line available over fullscreen windows." : "在全屏应用上方保留晾衣绳。";
+                            icon: @image-url("icons/monitor.svg");
+                            divider: false;
+                            SettingsToggle { dark: root.dark; label: root.english ? "Show above fullscreen apps" : "全屏时也显示"; checked <=> root.show-over-fullscreen; }
+                        }
+                    }
+                    if root.section-index == 2: VerticalLayout {
+                        spacing: 0px;
+                        alignment: start;
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Language" : "界面语言";
+                            detail: root.english ? "Changes appear as you choose." : "选择后即可预览。";
+                            icon: @image-url("icons/language.svg");
+                            ComboBox {
+                                min-width: 170px; max-width: 170px;
+                                horizontal-stretch: 0;
+                                accessible-label: root.english ? "Language" : "界面语言";
+                                model: ["简体中文", "English"];
+                                current-index <=> root.language-index;
+                                selected(value) => { root.english = self.current-index == 1; }
+                            }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Theme" : "主题";
+                            detail: root.english ? "Follow Windows, or choose your own light." : "跟随 Windows，或选择喜欢的明暗。";
+                            icon: @image-url("icons/appearance.svg");
+                            divider: false;
+                            ComboBox {
+                                min-width: 170px; max-width: 170px;
+                                horizontal-stretch: 0;
+                                accessible-label: root.english ? "Theme" : "主题";
+                                model: root.english ? ["System", "Light", "Dark"] : ["跟随系统", "浅色", "深色"];
+                                current-index <=> root.theme-index;
+                                selected(value) => {
+                                    root.dark = self.current-index == 0 ? root.system-dark : self.current-index == 2;
+                                    Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+                                }
+                            }
+                        }
+                    }
+                    if root.section-index == 3: VerticalLayout {
+                        spacing: 0px;
+                        alignment: start;
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Launch at sign-in" : "开机自动启动";
+                            detail: root.english ? "Start Snapline when you sign in to Windows." : "登录 Windows 时，让晾图一起准备好。";
+                            icon: @image-url("icons/startup.svg");
+                            SettingsToggle { dark: root.dark; label: root.english ? "Launch at sign-in" : "开机自动启动"; checked <=> root.autostart; }
+                        }
+                        SettingRow {
+                            dark: root.dark;
+                            label: root.english ? "Show / hide the line" : "展开 / 收起晾衣绳";
+                            detail: root.english ? "Your shortcut for a quick glance." : "随时看一眼，也能随时收起来。";
+                            icon: @image-url("icons/keyboard.svg");
+                            divider: false;
+                        }
+                        LineEdit { accessible-label: root.english ? "Show or hide shortcut" : "展开或收起快捷键"; text <=> root.hotkey; placeholder-text: "Ctrl+Alt+T"; }
+                        Text {
+                            text: root.english ? "Use Ctrl, Alt, Shift or Win + a letter, digit or function key." : "使用 Ctrl、Alt、Shift 或 Win，搭配字母、数字或功能键。";
+                            color: root.muted-ink;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                            vertical-stretch: 0;
+                        }
+                    }
+                }
+            }
+        }
+        if !root.status.is-empty: Rectangle {
+            min-height: 48px;
+            vertical-stretch: 0;
+            background: root.dark ? #403a28 : #f6f0dc;
+            VerticalLayout {
+                padding-left: 24px; padding-right: 24px;
+                padding-top: 9px; padding-bottom: 9px;
+                Text {
+                    text: root.status;
+                    color: root.dark ? #f3dfa7 : #745a20;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                }
+            }
+        }
+        Rectangle {
+            height: 76px;
+            vertical-stretch: 0;
+            background: root.dark ? #26332b : #f3f7ed;
+            Rectangle { height: 1px; background: root.line-color; }
+            HorizontalLayout {
+                padding-left: 24px; padding-right: 24px;
+                padding-top: 20px; padding-bottom: 20px;
+                spacing: 9px;
+                SettingsAction { dark: root.dark; text: root.english ? "About" : "关于晾图"; icon: @image-url("icons/info.svg"); clicked => { root.about(); } }
+                Rectangle { horizontal-stretch: 1; }
+                SettingsAction { dark: root.dark; text: root.english ? "Close" : "关闭"; icon: @image-url("icons/close.svg"); clicked => { root.done(); } }
+                SettingsAction { dark: root.dark; primary: true; text: root.english ? "Save settings" : "保存设置"; icon: @image-url("icons/save.svg"); clicked => { root.save(); } }
+            }
+        }
+    }
+}
+export component PreviewWindow inherits Window {
+    in-out property <bool> english;
+    in-out property <bool> dark;
+    in-out property <image> image;
+    in-out property <string> image-title;
+    in-out property <int> image-width: 1;
+    in-out property <int> image-height: 1;
+    in-out property <bool> can-undo;
+    in-out property <bool> dirty;
+    in-out property <string> status;
+    in-out property <int> tool-index: 0;
+    in-out property <color> stroke-color: #ee584d;
+    in-out property <float> stroke-width: 4;
+    callback pointer-event(string, float, float);
+    callback undo();
+    callback save-copy();
+    callback save();
+    callback open-original();
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    private property <float> fit-scale: min(canvas.width / 1px / max(1, root.image-width), canvas.height / 1px / max(1, root.image-height));
+    private property <bool> drawing: false;
+    private property <length> start-x;
+    private property <length> start-y;
+
+    title: root.image-title;
+    preferred-width: 940px;
+    preferred-height: 690px;
+    min-width: 720px;
+    min-height: 480px;
+    background: root.dark ? #1d2126 : #f5f6f8;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle {
+            height: 64px;
+            vertical-stretch: 0;
+            HorizontalLayout {
+                padding: 14px;
+                spacing: 10px;
+                Text { text: root.english ? "Edit image" : "编辑图片"; color: root.dark ? #eef3f6 : #18242d; font-size: 18px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 0; }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: root.english ? "Open file" : "打开文件"; icon: @image-url("icons/open.svg"); colorize-icon: true; clicked => { root.open-original(); } }
+                Button { text: root.english ? "Save a copy…" : "保存副本…"; clicked => { root.save-copy(); } }
+                Button { text: root.english ? "Save" : "保存"; icon: @image-url("icons/save.svg"); colorize-icon: true; primary: true; enabled: root.dirty; clicked => { root.save(); } }
+            }
+        }
+        Rectangle {
+            height: 50px;
+            vertical-stretch: 0;
+            background: root.dark ? #25292e : #e9edf1;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 7px;
+                for label[index] in (root.english ? ["Pen", "Rectangle", "Arrow", "Crop"] : ["画笔", "矩形", "箭头", "裁剪"]): Button {
+                    text: label;
+                    checkable: true;
+                    checked: index == root.tool-index;
+                    clicked => { root.tool-index = index; }
+                }
+                Rectangle { width: 7px; horizontal-stretch: 0; }
+                ComboBox {
+                    min-width: 102px;
+                    max-width: 112px;
+                    model: root.english ? ["Coral", "Blue", "Green", "White", "Black"] : ["珊瑚红", "蓝色", "绿色", "白色", "黑色"];
+                    selected(value) => {
+                        root.stroke-color = self.current-index == 0 ? #ee584d : self.current-index == 1 ? #2781dc : self.current-index == 2 ? #299b73 : self.current-index == 3 ? #ffffff : #161b22;
+                    }
+                    enabled: root.tool-index != 3;
+                }
+                Slider { minimum: 2; maximum: 14; step: 1; value <=> root.stroke-width; enabled: root.tool-index != 3; min-width: 80px; max-width: 120px; }
+                Text { text: round(root.stroke-width) + " px"; color: root.dark ? #bbc5cc : #53606b; vertical-alignment: center; horizontal-stretch: 0; }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: root.english ? "Undo" : "撤销"; enabled: root.can-undo; clicked => { root.undo(); } }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            background: root.dark ? #15191e : #e0e5e9;
+            canvas := Rectangle {
+                x: 24px; y: 24px;
+                width: parent.width - 48px;
+                height: parent.height - 48px;
+                photo := Image {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: root.image-width * root.fit-scale * 1px;
+                    height: root.image-height * root.fit-scale * 1px;
+                    source: root.image;
+                    image-fit: fill;
+                    image-rendering: smooth;
+                    accessible-label: root.image-title;
+
+                    if root.drawing && (root.tool-index == 1 || root.tool-index == 3): Rectangle {
+                        x: min(root.start-x, draw-touch.mouse-x);
+                        y: min(root.start-y, draw-touch.mouse-y);
+                        width: abs(draw-touch.mouse-x - root.start-x);
+                        height: abs(draw-touch.mouse-y - root.start-y);
+                        border-color: root.tool-index == 3 ? #ffffff : root.stroke-color;
+                        border-width: root.tool-index == 3 ? 1.5px : root.stroke-width * root.fit-scale * 1px;
+                        background: root.tool-index == 3 ? #ffffff20 : transparent;
+                    }
+
+                    if root.drawing && root.tool-index == 2: Path {
+                        width: photo.width; height: photo.height;
+                        viewbox-width: photo.width / 1px;
+                        viewbox-height: photo.height / 1px;
+                        stroke: root.stroke-color;
+                        stroke-width: root.stroke-width * root.fit-scale * 1px;
+                        MoveTo { x: root.start-x / 1px; y: root.start-y / 1px; }
+                        LineTo { x: draw-touch.mouse-x / 1px; y: draw-touch.mouse-y / 1px; }
+                    }
+
+                    draw-touch := TouchArea {
+                        mouse-cursor: crosshair;
+                        pointer-event(event) => {
+                            let px = max(0, min(1, self.mouse-x / max(1px, self.width))) * root.image-width;
+                            let py = max(0, min(1, self.mouse-y / max(1px, self.height))) * root.image-height;
+                            if event.kind == PointerEventKind.cancel {
+                                root.drawing = false;
+                                root.pointer-event("cancel", px, py);
+                            } else if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                                root.drawing = true;
+                                root.start-x = self.mouse-x;
+                                root.start-y = self.mouse-y;
+                                root.pointer-event("down", px, py);
+                            } else if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                                root.drawing = false;
+                                root.pointer-event("up", px, py);
+                            }
+                        }
+                        moved => {
+                            if root.drawing {
+                                root.pointer-event("move", max(0, min(1, self.mouse-x / max(1px, self.width))) * root.image-width, max(0, min(1, self.mouse-y / max(1px, self.height))) * root.image-height);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 42px;
+            vertical-stretch: 0;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 16px;
+                Text {
+                    text: root.status.is-empty ? (root.tool-index == 3 ? (root.english ? "Drag to crop, then save to update this image." : "拖动选择裁剪范围，保存后更新这张图片。") : (root.english ? "Draw on the image, then save to update it on the line." : "直接在图片上标注，保存后替换绳上的这张图。")) : root.status;
+                    color: root.dark ? #bbc5cc : #53606b;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text { text: root.image-width + " × " + root.image-height + (root.dirty ? (root.english ? " · Edited" : " · 已编辑") : ""); color: root.dark ? #bbc5cc : #53606b; vertical-alignment: center; horizontal-stretch: 0; }
+            }
+        }
+    }
+}
+
+export component AboutWindow inherits Window {
+    in-out property <bool> english;
+    callback done();
+    title: root.english ? "About Snapline" : "关于晾图";
+    preferred-width: 500px;
+    preferred-height: 520px;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+    VerticalLayout {
+        padding: 28px;
+        spacing: 12px;
+        Text { text: root.english ? "Snapline" : "晾图"; font-size: 28px; font-weight: 600; color: Palette.foreground; }
+        Text { text: "Snapline 0.1.0"; color: Palette.foreground; }
+        Text { text: root.english ? "Screenshots, close at hand.\nA native Windows app built with Rust and Slint." : "截图晾起来，随手就能取。\n使用 Rust 与 Slint 构建的原生 Windows 应用。"; color: Palette.foreground; wrap: word-wrap; }
+        Text { text: root.english ? "Inspired by Tendedero by Alejandro Buján.\nhttps://github.com/alejandrobujan/tendedero\nSnapline uses its own name and artwork." : "灵感来自 Alejandro Buján 的 Tendedero。\nhttps://github.com/alejandrobujan/tendedero\n晾图使用独立的名称与图形设计。"; color: Palette.foreground; wrap: word-wrap; }
+        Rectangle { height: 12px; vertical-stretch: 0; }
+        AboutSlint { }
+        Rectangle { vertical-stretch: 1; }
+        HorizontalLayout { Rectangle { horizontal-stretch: 1; } Button { text: root.english ? "Close" : "关闭"; clicked => { root.done(); } } }
+    }
+}
