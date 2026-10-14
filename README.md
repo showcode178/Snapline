@@ -39,6 +39,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1
 
 需要 NSIS 3；可设置 `SNAPLINE_NSIS_EXE` 指向 `makensis.exe`。应用运行时不需要 WebView2、浏览器或 .NET。
 
+## GitHub Actions 安装包
+
+推送到 `main` 后，[Windows installer 工作流](https://github.com/showcode178/Snapline/actions/workflows/windows-installer.yml) 会在 Windows x64 环境构建 NSIS 安装包和便携 ZIP。也可在工作流页面点击 **Run workflow** 手动构建。
+
+打开成功的运行记录，在 **Artifacts** 中下载 `Snapline-<版本>-Setup` 或 `Snapline-<版本>-Windows-x64`，解压 GitHub 的产物压缩包后即可得到安装程序或便携 ZIP。下载 Actions 产物需要登录 GitHub；产物保留 30 天。版本号自动读取 `Cargo.toml`，依赖使用 `Cargo.lock` 锁定。此工作流不创建 GitHub Release。
+
 ## 授权
 
 项目代码采用 MIT 许可，见 [LICENSE](LICENSE)。保留原项目作者的署名及名称、图标条款；本项目不复用原版名称、图标或宣传图片，也不代表原作者认可。

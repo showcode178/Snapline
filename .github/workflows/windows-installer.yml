@@ -1,0 +1,63 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build Windows x64 packages
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Install NSIS
+        run: |
+          choco install nsis --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed.' }
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          if (-not (Test-Path -LiteralPath $nsis)) { throw "NSIS compiler was not found: $nsis" }
+          "SNAPLINE_NSIS_EXE=$nsis" >> $env:GITHUB_ENV
+
+      - name: Build installer and portable ZIP
+        id: package
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read application version.' }
+          $version = ($metadata.packages | Where-Object name -EQ 'snapline').version
+          if (-not $version) { throw 'Application version was not found.' }
+          ./scripts/package.ps1 -Version $version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snapline-${{ steps.package.outputs.version }}-Setup
+          path: dist/Snapline-${{ steps.package.outputs.version }}-Setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snapline-${{ steps.package.outputs.version }}-Windows-x64
+          path: dist/Snapline-${{ steps.package.outputs.version }}-Windows-x64.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
