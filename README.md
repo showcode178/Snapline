@@ -6,7 +6,7 @@
 
 ## 使用
 
-双击 `dist/Snapline.exe` 运行，或使用 `dist/Snapline-0.1.0-Setup.exe` 安装。安装到当前用户目录，无需管理员权限。便携版为 `dist/Snapline-0.1.0-Windows-x64.zip`。
+从 [GitHub Releases](https://github.com/showcode178/Snapline/releases/latest) 下载 `Snapline-<版本>-Setup.exe` 安装，或下载 `Snapline-<版本>-Windows-x64.zip`，解压后双击 `Snapline.exe` 使用便携版。安装到当前用户目录，无需管理员权限。
 
 1. 按 **Win + Shift + S** 截图，截图进入剪贴板后会短暂闪光、发出快门声，再缩小挂到屏幕顶部并轻摆。也可以点「导入」添加本地图片。
 2. 鼠标靠近屏幕顶部展开晾衣绳；绳子自动覆盖当前显示器的宽度，分辨率或缩放变化后同步调整。点「收起」或 **Ctrl + Alt + T** 切换显示。
@@ -43,7 +43,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1
 
 推送到 `main` 后，[Windows installer 工作流](https://github.com/showcode178/Snapline/actions/workflows/windows-installer.yml) 会在 Windows x64 环境构建 NSIS 安装包和便携 ZIP。也可在工作流页面点击 **Run workflow** 手动构建。
 
-打开成功的运行记录，在 **Artifacts** 中下载 `Snapline-<版本>-Setup` 或 `Snapline-<版本>-Windows-x64`，解压 GitHub 的产物压缩包后即可得到安装程序或便携 ZIP。下载 Actions 产物需要登录 GitHub；产物保留 30 天。版本号自动读取 `Cargo.toml`，依赖使用 `Cargo.lock` 锁定。此工作流不创建 GitHub Release。
+打开成功的运行记录，在 **Artifacts** 中下载 `Snapline-<版本>-Setup` 或 `Snapline-<版本>-Windows-x64`，解压 GitHub 的产物压缩包后即可得到安装程序或便携 ZIP。下载 Actions 产物需要登录 GitHub；产物保留 30 天。版本号自动读取 `Cargo.toml`，依赖使用 `Cargo.lock` 锁定。
+
+正式发布时，先更新 `Cargo.toml` 和 `Cargo.lock` 中的版本并提交，然后创建、推送对应的 `v<版本>` 标签（例如 `git tag v0.1.0`、`git push origin v0.1.0`）。标签版本必须与 `Cargo.toml` 一致；标签构建成功后自动创建 GitHub Release，直接附上安装程序与便携 ZIP。Release 附件没有 Actions 的 30 天保留限制，公开仓库无需登录即可下载。普通分支推送只生成 Actions 产物，不创建 Release。
 
 ## 授权
 
